@@ -90,10 +90,40 @@ const AnimatedGradient = () => {
         directionalLight.position.set(1, 1, 1);
         scene.add(directionalLight);
 
-        const animate = (time) => {
-            renderer.render(scene, camera);
-            requestAnimationFrame(animate);
-        };
+       const animate = (time) => {
+    const positions = geometry.attributes.position;
+    const verts = positions.array;
+    const colors = geometry.attributes.color.array;
+
+    for (let i = 0; i < positions.count; i++) {
+        const x = verts[i * 3];
+        const y = verts[i * 3 + 1];
+
+        // 1. Animate Z position like a wave
+        const wave = 0.5 * Math.sin(x * 2 + time * 0.002) + 0.3 * Math.sin(y * 3 + time * 0.003);
+        verts[i * 3 + 2] = wave;
+
+        // 2. Animated gradient flowing by using time
+        const t = 0.5 + 0.5 * Math.sin(x * 0.5 + time * 0.001);
+
+        // 3. Add fine sine-stripes for hair-like bands
+        const band = 0.3 + 0.7 * Math.abs(Math.sin(y * 10 + time * 0.01)); // Thin lines
+
+        const baseColor = new THREE.Color().lerpColors(colorStart, colorEnd, t * band);
+        colors[i * 3] = baseColor.r;
+        colors[i * 3 + 1] = baseColor.g;
+        colors[i * 3 + 2] = baseColor.b;
+    }
+
+    positions.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+    geometry.computeVertexNormals();
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+};
+
+
         animate();
 
         const handleResize = () => {
