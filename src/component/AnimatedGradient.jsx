@@ -1,4 +1,4 @@
-// AnimatedGradient.jsx — 3D Flowing Ribbon with Vertex Colors (Corrected)
+// AnimatedGradient.jsx — 3-Strand Braided Brush-Stroke Ribbon
 import { useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -9,121 +9,100 @@ const AnimatedGradient = () => {
     useEffect(() => {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 5, 15);
+        camera.position.set(0, 2, 7);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0xffffff);
         mountRef.current.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.update();
 
-        // 1. Define the path for the ribbon (you can animate this)
-        const path = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(-5, 0, 0),
-            new THREE.Vector3(-3, 2, 3),
-            new THREE.Vector3(0, 1, -2),
-            new THREE.Vector3(3, -2, 2),
-            new THREE.Vector3(5, 1, 0)
-        ]);
+        const clock = new THREE.Clock();
 
-        // 2. Create the TubeGeometry
-        const geometry = new THREE.TubeGeometry(
-            path,       // The curve to extrude along
-            100,        // Number of segments along the tube
-            1,          // Radius of the tube
-            8,          // Number of radial segments
-            false       // Closed?
-        );
-
-        // 3. Create the material with vertex colors enabled
-        const material = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            side: THREE.DoubleSide, // To see both sides of the ribbon
-            transparent: true,
-            opacity: 0.8 // Adjust for desired transparency
+        const makeMaterial = () => new THREE.ShaderMaterial({
+            vertexShader: `
+                varying vec2 vUv;
+                uniform float uTime;
+                void main() {
+                    vUv = uv;
+                    vec3 pos = position;
+                    pos.z += sin(uv.y * 200.0 + uTime * 2.0) * 0.04; // flowing stroke effect
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec2 vUv;
+                uniform float uTime;
+                void main() {
+                    float stripe = smoothstep(0.4, 0.6, fract(vUv.y * 60.0 + uTime * 0.5));
+                    vec3 base = vec3(
+                        1.0,
+                        0.5 + 0.3 * sin(vUv.y * 6.0 + uTime * 0.3),
+                        0.5 + 0.2 * cos(vUv.y * 4.0 - uTime * 0.2)
+                    );
+                    vec3 color = base + stripe * 0.15;
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `,
+            uniforms: {
+                uTime: { value: 0.0 }
+            },
+            transparent: false,
+            side: THREE.DoubleSide
         });
 
-        const colorStart = new THREE.Color('#f96ca3'); // Pink
-        const colorEnd = new THREE.Color('#ffc2a1');   // Orange
-
-        // 4. Assign vertex colors based on position along the ribbon
-        const positionAttribute = geometry.attributes.position;
-        const colors = [];
-        const vertices = geometry.attributes.position.array;
-
-        for (let i = 0; i < positionAttribute.count; i++) {
-            const vertex = new THREE.Vector3(vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2]);
-
-            // Calculate approximate normalized position along the curve
-            let minDistanceSq = Infinity;
-            let closestT = 0;
-            const segments = path.segments;
-            const divisions = 100; // Increase for better accuracy
-
-            for (let j = 0; j <= segments * divisions; j++) {
-                const t = j / (segments * divisions);
-                const point = path.getPointAt(t);
-                const distanceSq = vertex.distanceToSquared(point);
-                if (distanceSq < minDistanceSq) {
-                    minDistanceSq = distanceSq;
-                    closestT = t;
-                }
+        const braidCurve = (radius, offset, phase) => {
+            const points = [];
+            const len = 300;
+            for (let i = 0; i < len; i++) {
+                const t = i / len;
+                const angle = t * Math.PI * 6 + phase;
+                const x = Math.sin(angle) * radius + offset.x + t * 5.0;
+                const y = -t * 10.0;
+                const z = Math.cos(angle) * radius + offset.z + t * 5.0;
+                points.push(new THREE.Vector3(x, y, z));
             }
+            return new THREE.CatmullRomCurve3(points);
+        };
 
-            const color = new THREE.Color().lerpColors(colorStart, colorEnd, closestT);
-            colors.push(color.r, color.g, color.b);
-        }
+        const radius = 0.2;
+        const strandOffsets = [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0.04, 0, -0.04),
+            new THREE.Vector3(-0.04, 0, 0.04)
+        ];
 
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        const materials = [makeMaterial(), makeMaterial(), makeMaterial()];
 
-        // 5. Create the mesh
-        const ribbon = new THREE.Mesh(geometry, material);
-        scene.add(ribbon);
+        const strands = [
+            braidCurve(radius, strandOffsets[0], 0),
+            braidCurve(radius, strandOffsets[1], Math.PI * 2 / 3),
+            braidCurve(radius, strandOffsets[2], Math.PI * 4 / 3)
+        ];
 
-        // Lighting
+        strands.forEach((curve, i) => {
+            const geometry = new THREE.TubeGeometry(curve, 600, 0.24, 32, false);
+            const mesh = new THREE.Mesh(geometry, materials[i]);
+            scene.add(mesh);
+        });
+
         const ambientLight = new THREE.AmbientLight(0x404040);
         scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(1, 1, 1);
         scene.add(directionalLight);
 
-       const animate = (time) => {
-    const positions = geometry.attributes.position;
-    const verts = positions.array;
-    const colors = geometry.attributes.color.array;
-
-    for (let i = 0; i < positions.count; i++) {
-        const x = verts[i * 3];
-        const y = verts[i * 3 + 1];
-
-        // 1. Animate Z position like a wave
-        const wave = 0.5 * Math.sin(x * 2 + time * 0.002) + 0.3 * Math.sin(y * 3 + time * 0.003);
-        verts[i * 3 + 2] = wave;
-
-        // 2. Animated gradient flowing by using time
-        const t = 0.5 + 0.5 * Math.sin(x * 0.5 + time * 0.001);
-
-        // 3. Add fine sine-stripes for hair-like bands
-        const band = 0.3 + 0.7 * Math.abs(Math.sin(y * 10 + time * 0.01)); // Thin lines
-
-        const baseColor = new THREE.Color().lerpColors(colorStart, colorEnd, t * band);
-        colors[i * 3] = baseColor.r;
-        colors[i * 3 + 1] = baseColor.g;
-        colors[i * 3 + 2] = baseColor.b;
-    }
-
-    positions.needsUpdate = true;
-    geometry.attributes.color.needsUpdate = true;
-    geometry.computeVertexNormals();
-
-    renderer.render(scene, camera);
-    requestAnimationFrame(animate);
-};
-
-
+        const animate = () => {
+            const elapsed = clock.getElapsedTime();
+            materials.forEach(mat => {
+                mat.uniforms.uTime.value = elapsed;
+            });
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        };
         animate();
 
         const handleResize = () => {
@@ -134,14 +113,40 @@ const AnimatedGradient = () => {
         window.addEventListener('resize', handleResize);
 
         return () => {
-            mountRef.current.removeChild(renderer.domElement);
+            if (mountRef.current?.contains(renderer.domElement)) {
+                mountRef.current.removeChild(renderer.domElement);
+            }
             window.removeEventListener('resize', handleResize);
-            geometry.dispose();
-            material.dispose();
+            window.removeEventListener('input', updateFromSliders);
+            renderer.dispose();
         };
     }, []);
 
-    return <div ref={mountRef} style={{ width: '100vw', height: '100vh', backgroundColor: 'white' }} />;
+    if (mountRef.current) mountRef.current.__camera = camera;
+
+        const updateFromSliders = () => {
+            const wrapper = mountRef.current;
+            if (!wrapper) return;
+            const cam = wrapper.__camera;
+            if (!cam) return;
+            cam.updateProjectionMatrix();
+        };
+
+        window.addEventListener('input', updateFromSliders);
+
+        return (
+            <>
+                <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+                <div style={{ position: 'absolute', top: 10, left: 10, background: '#fff', padding: '10px', borderRadius: '6px' }}>
+                    <label>Camera Position</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label>X <input type="range" min="-10" max="10" step="0.1" defaultValue="0" onInput={(e) => mountRef.current.__camera.position.x = parseFloat(e.target.value)} /></label>
+                        <label>Y <input type="range" min="-10" max="10" step="0.1" defaultValue="2" onInput={(e) => mountRef.current.__camera.position.y = parseFloat(e.target.value)} /></label>
+                        <label>Z <input type="range" min="2" max="15" step="0.1" defaultValue="7" onInput={(e) => mountRef.current.__camera.position.z = parseFloat(e.target.value)} /></label>
+                    </div>
+                </div>
+            </>
+        );
 };
 
 export default AnimatedGradient;
