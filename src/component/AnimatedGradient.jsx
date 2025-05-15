@@ -1,15 +1,19 @@
 // AnimatedGradient.jsx — 3-Strand Braided Brush-Stroke Ribbon
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 const AnimatedGradient = () => {
     const mountRef = useRef();
+    const [cameraRef, setCameraRef] = useState(new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000));
+    const [, setTick] = useState(0);
 
     useEffect(() => {
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 2, 7);
+        const camera = cameraRef;
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        camera.position.set(2.6, -1.7, 3.2);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -22,38 +26,42 @@ const AnimatedGradient = () => {
 
         const clock = new THREE.Clock();
 
-        const makeMaterial = () => new THREE.ShaderMaterial({
-            vertexShader: `
-                varying vec2 vUv;
-                uniform float uTime;
-                void main() {
-                    vUv = uv;
-                    vec3 pos = position;
-                    pos.z += sin(uv.y * 200.0 + uTime * 2.0) * 0.04; // flowing stroke effect
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-                }
-            `,
-            fragmentShader: `
-                varying vec2 vUv;
-                uniform float uTime;
-                void main() {
-                    float stripe = smoothstep(0.4, 0.6, fract(vUv.y * 60.0 + uTime * 0.5));
-                    vec3 base = vec3(
-                        1.0,
-                        0.5 + 0.3 * sin(vUv.y * 6.0 + uTime * 0.3),
-                        0.5 + 0.2 * cos(vUv.y * 4.0 - uTime * 0.2)
-                    );
-                    vec3 color = base + stripe * 0.15;
-                    gl_FragColor = vec4(color, 1.0);
-                }
-            `,
-            uniforms: {
-                uTime: { value: 0.0 }
-            },
-            transparent: false,
-            side: THREE.DoubleSide
-        });
+    const makeMaterial = () => new THREE.ShaderMaterial({
+    vertexShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        void main() {
+            vUv = uv;
+            vec3 pos = position;
+            pos.z += sin(uv.y * 200.0 + uTime * 2.0) * 0.04; // flowing stroke effect
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+    `,
+    fragmentShader: `
+        varying vec2 vUv;
+        uniform float uTime;
+        void main() {
+            // Stripe effect for texture
+            float stripe = smoothstep(0.4, 0.6, fract(vUv.y * 60.0 + uTime * 0.5));
 
+            // Define pink-to-peach gradient
+            vec3 pink = vec3(1.0, 0.411, 0.706); // #FF69B4
+            vec3 peach = vec3(1.0, 0.855, 0.725); // #FFDAB9
+            // Interpolate between pink and peach based on vUv.y with a slight time-based shift
+            float gradientMix = sin(vUv.y * 3.0 + uTime * 0.2) * 0.5 + 0.5;
+            vec3 baseColor = mix(pink, peach, gradientMix);
+
+            // Add subtle variation for a brushstroke effect
+            vec3 color = baseColor + stripe * 0.1; // Reduced stripe intensity for subtlety
+            gl_FragColor = vec4(color, 1.0);
+        }
+    `,
+    uniforms: {
+        uTime: { value: 0.0 }
+    },
+    transparent: false,
+    side: THREE.DoubleSide
+});
         const braidCurve = (radius, offset, phase) => {
             const points = [];
             const len = 300;
@@ -117,36 +125,31 @@ const AnimatedGradient = () => {
                 mountRef.current.removeChild(renderer.domElement);
             }
             window.removeEventListener('resize', handleResize);
-            window.removeEventListener('input', updateFromSliders);
             renderer.dispose();
         };
     }, []);
 
-    if (mountRef.current) mountRef.current.__camera = camera;
+    const handleSliderChange = (axis) => (e) => {
+        const val = parseFloat(e.target.value);
+        if (!cameraRef) return;
+        cameraRef.position[axis] = val;
+        cameraRef.updateProjectionMatrix();
+        setTick(t => t + 1);
+    };
 
-        const updateFromSliders = () => {
-            const wrapper = mountRef.current;
-            if (!wrapper) return;
-            const cam = wrapper.__camera;
-            if (!cam) return;
-            cam.updateProjectionMatrix();
-        };
-
-        window.addEventListener('input', updateFromSliders);
-
-        return (
-            <>
-                <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
-                <div style={{ position: 'absolute', top: 10, left: 10, background: '#fff', padding: '10px', borderRadius: '6px' }}>
-                    <label>Camera Position</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label>X <input type="range" min="-10" max="10" step="0.1" defaultValue="0" onInput={(e) => mountRef.current.__camera.position.x = parseFloat(e.target.value)} /></label>
-                        <label>Y <input type="range" min="-10" max="10" step="0.1" defaultValue="2" onInput={(e) => mountRef.current.__camera.position.y = parseFloat(e.target.value)} /></label>
-                        <label>Z <input type="range" min="2" max="15" step="0.1" defaultValue="7" onInput={(e) => mountRef.current.__camera.position.z = parseFloat(e.target.value)} /></label>
-                    </div>
+    return (
+        <>
+            <div ref={mountRef} style={{ width: '100vw', height: '100vh' }} />
+            <div style={{ position: 'absolute', top: 10, left: 10, background: '#3b3a3a', padding: '10px', borderRadius: '6px' }}>
+                <label>Camera Position</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label>X <input type="range" min="-10" max="10" step="0.1" defaultValue="0" onInput={handleSliderChange('x')} /> {cameraRef?.position.x.toFixed(1)}</label>
+                    <label>Y <input type="range" min="-10" max="10" step="0.1" defaultValue="2" onInput={handleSliderChange('y')} /> {cameraRef?.position.y.toFixed(1)}</label>
+                    <label>Z <input type="range" min="2" max="15" step="0.1" defaultValue="7" onInput={handleSliderChange('z')} /> {cameraRef?.position.z.toFixed(1)}</label>
                 </div>
-            </>
-        );
+            </div>
+        </>
+    );
 };
 
 export default AnimatedGradient;
