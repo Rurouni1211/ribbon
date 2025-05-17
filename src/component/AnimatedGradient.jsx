@@ -11,7 +11,7 @@ const AnimatedGradient = () => {
     const cameraRef = useRef(new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000));
     const groupRef = useRef(null);
 
-    const initialGroupPos = { x: 5.00, y: 1.07, z: -5.00 };
+    const initialGroupPos = { x: 5.7, y: 1.07, z: -5.00 };
     const initialGroupRot = { x: -0.09, y: -0.26, z: -0.85 };
     const initialGroupScale = { x: 1.59, y: 1.45, z: 2.80 };
 
@@ -40,11 +40,16 @@ const AnimatedGradient = () => {
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
+        controls.enableRotate = false;
+controls.enableZoom = false;
+controls.enablePan = false;
+controls.enabled = false;
+
 
         const clock = new THREE.Clock();
 
         const loader = new THREE.TextureLoader();
-        const texture = loader.load('/6181758.jpg', () => {
+        const texture = loader.load('/2592278.jpg', () => {
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
             texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -74,14 +79,20 @@ const AnimatedGradient = () => {
                         vec2 uv = vUv * vec2(2.0, 0.8);
                         uv = clamp(uv, 0.0, 1.0);
                         uv += 0.0005 * vec2(sin(uTime), cos(uTime));
-                        vec4 tex = texture2D(uTexture, uv);
+                        //vec4 tex = texture2D(uTexture, uv);
+                        vec4 tex = texture2D(uTexture, vec2(uv.y, uv.x));//vertical
+
  
                         float fadeX = smoothstep(0.0, 0.1, uv.x) * (1.0 - smoothstep(0.9, 1.0, uv.x));
                         float fadeY = smoothstep(0.0, 0.1, uv.y) * (1.0 - smoothstep(0.9, 1.0, uv.y));
                         float edgeFade = fadeX * fadeY;
                         vec3 fadeColor = vec3(0.1, 0.1, 0.15);
 
-                        vec3 base = mix(fadeColor, tex.rgb, edgeFade);
+                      vec3 gradientTint = mix(vec3(0.9, 0.85, 1.0), vec3(0.1, 0.1, 0.2), vUv.y);
+vec3 tintedTexture = mix(tex.rgb, gradientTint, 0.4); // 40% gradient overlay
+vec3 base = mix(fadeColor, tintedTexture, edgeFade);
+
+
                         float highlight = 0.1 * sin(vUv.y * 20.0 + uTime * 2.0);
                         vec3 finalColor = base + highlight;
                         gl_FragColor = vec4(clamp(finalColor, 0.0, 1.0), tex.a * edgeFade * 0.85);
